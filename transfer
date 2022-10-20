@@ -1,0 +1,222 @@
+// ==UserScript==
+// @name         Kamadan
+// @namespace    http://tampermonkey.net/
+// @version      0.1
+// @description  try to take over the world!
+// @author       You
+// @match        https://kamadan.gwtoolbox.com
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=looper.com
+// @grant        none
+// ==/UserScript==
+
+(function() {
+  'use strict';
+
+  const $ = ele => document.querySelectorAll(ele).length > 1 ? document.querySelectorAll(ele) : document.querySelector(ele);
+  const get = () => JSON.parse(localStorage.getItem('Kamadan'));
+  const set = (val) => localStorage.setItem('Kamadan', JSON.stringify(val));
+  const create = (ele, attrs, listeners) => {
+    // create element
+    const e = document.createElement(ele)
+    // add any attributes
+    if (attrs) {
+      // TODO: change this to Object.keys(attrs).forEach() to remove hasOwnProperty check
+      for (let key in attrs) {
+        if (attrs.hasOwnProperty(key)) {
+          if (typeof attrs[key] === 'object' && !Array.isArray(attrs[key])) {
+            for (let k in attrs[key]) {
+              e[key][k] = attrs[key][k]
+            }
+          } else {
+            if (key === 'class') {
+              if (Array.isArray(attrs[key])) attrs[key].forEach( c => e.classList.add(c))
+              else e.classList.add(attrs[key])
+            }
+            else if (key.includes('data')) e.setAttribute(key, attrs[key])
+            else e[key] = attrs[key]
+          }
+        }
+      }
+    }
+
+    // add any event listeners
+    if (listeners) {
+      for (let l in listeners) {
+        if (listeners.hasOwnProperty(l)) e.addEventListener(l, listeners[l])
+      }
+    }
+    return e
+  }
+
+  const appendChildren = (parent, ...children) => {
+    if (!children.length) return
+
+    let ret = false
+    if (children[children.length - 1] === 'return') {
+      children.pop()
+      ret = true
+    }
+    children.forEach( child => parent.appendChild(child))
+    if (ret) return parent
+  }
+
+  const messageStyle = {
+      position: 'absolute',
+      top: '0px',
+      right: '0px',
+      left: '0px',
+      height: '55px',
+      display: 'none',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: '99',
+      fontSize: '26px'
+  };
+  const MESSAGE = create('div', {style: messageStyle});
+  document.body.appendChild(MESSAGE);
+
+  let WATCHLIST,
+      MAIN,
+      HEADER,
+      CONTAINER,
+      INNERCONTAINER,
+      ADDBUTTON;
+
+  go();
+
+  function go() {
+    MAIN = $('#page');
+    HEADER = $('#results-header');
+
+    if (!MAIN || !HEADER) return go();
+
+    // build the watcher container
+    const containerStyle = {
+      width: '100%',
+      display: 'flex',
+      justifyContent: 'center'
+    };
+    CONTAINER = create('div', {id: 'watchers-outer', style: containerStyle});
+    // build inner container
+    const innerContainerStyle = {
+      display: 'flex',
+      alignItems: 'center',
+      padding: '10px 15px',
+      width: '100%',
+      maxWidth: '1200px',
+      flexWrap: 'wrap'
+    }
+    INNERCONTAINER = create('div', {id: 'watchers-inner', style: innerContainerStyle});
+    CONTAINER.appendChild(INNERCONTAINER);
+    // Attach to page
+    MAIN.insertBefore(CONTAINER, HEADER);
+
+    // Create Add Button
+    const addButtonStyle = {
+      width: '30px',
+      height: '55px',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      margin: '5px',
+      backgroundColor: 'transparent',
+      fontSize: '180%',
+      cursor: 'pointer',
+      border: '1px solid rgba(0, 0, 0, 0.38)',
+      borderRadius: '4px'
+    };
+    let ADDBUTTON = create('div', {style: addButtonStyle}, {click: buildWatcher})
+    const mouseEnterListener = () => {
+      ADDBUTTON.style.boxShadow = '0 0 0 1px rgba(0, 0, 0, 0.38) inset';
+    }
+    const mouseLeaveListener = () => {
+      ADDBUTTON.style.boxShadow = '';
+    }
+    const mouseDownListener = () => {
+      ADDBUTTON.style.backgroundColor = 'rgba(0, 0, 0, 0.12)';
+    }
+    const mouseUpListener = () => {
+      ADDBUTTON.style.backgroundColor = 'transparent';
+    }
+    ADDBUTTON.addEventListener('mouseenter', mouseEnterListener);
+    ADDBUTTON.addEventListener('mouseleave', mouseLeaveListener);
+    ADDBUTTON.addEventListener('mousedown', mouseDownListener);
+    ADDBUTTON.addEventListener('mouseup', mouseUpListener);
+    ADDBUTTON.textContent = '+';
+    INNERCONTAINER.appendChild(ADDBUTTON);
+  }
+    // Get the stored watchers
+    WATCHLIST = get();
+   // if (!WATCHLIST) set([]);
+    //else WATCHLIST.forEach(buildWatcher);
+
+
+  function buildWatcher(data) {
+    const watcherContainerStyle = {
+      width: '230px',
+      height: '55px',
+      margin: '5px',
+      border: '1px solid rgba(0, 0, 0, 0.38)',
+      borderRadius: '4px',
+      display: 'flex',
+      flexDirection: 'column'
+    };
+    const watcherContainer = create('div', {style: watcherContainerStyle});
+    INNERCONTAINER.appendChild(watcherContainer);
+    const watcherInput = create('input', {style: {margin: '2px 5px', paddingLeft: '3px'}})
+    const watcherButtonContainer = create('div', {style: {display: 'flex', flexDirection: 'row', justifyContent: 'space-around'}});
+    const watcherTextColorPicker = create('input', {type: 'color', value: '#000000', style: {width: '30%'}}, {change: v => {watcherInput.style.color = v.target.value}});
+    const watcherTextBGColorPicker = create('input', {type: 'color', value: '#FFFFFF', style: {width: '30%'}}, {change: v => {watcherInput.style.backgroundColor = v.target.value}});
+    const saveButton = create('button', {style: {width: '30%', height: '27px'}}, {click: save});
+    saveButton.textContent = 'SAVE';
+    const alterButtonsContainer = create('div', {style: {padding: '0 5px', height: '100%', display: 'none', flexDirection: 'row', justifyContent: 'space-around'}})
+    const editButton = create('button', {style: {height: '27px', width: '48%'}}, {click: edit});
+    editButton.textContent = 'EDIT';
+    const deleteButton = create('button', {style: {height: '27px', width: '48%'}}, {click: edit});
+    deleteButton.textContent = 'DELETE';
+    appendChildren(watcherButtonContainer, watcherTextColorPicker, watcherTextBGColorPicker, saveButton);
+    appendChildren(alterButtonsContainer, editButton, deleteButton);
+    appendChildren(watcherContainer, watcherInput, watcherButtonContainer, alterButtonsContainer);
+
+    function save() {
+      const watcherVal = watcherInput.value;
+      if (!watcherVal) return message('Watcher is empty!', {type: 'error'});
+      const textColor = watcherTextColorPicker.value
+      const bgColor = watcherTextBGColorPicker.value
+      const watcher = {
+        watcher: watcherVal,
+        textColor,
+        bgColor
+      }
+
+      if (WATCHLIST.map(w => w.watcher).includes(watcherVal)) return message('Watcher Already Exists!', {type: 'error'});
+
+      WATCHLIST.push(watcher);
+//      set(WATCHLIST);
+      watcherButtonContainer.style.display = 'none';
+      alterButtonsContainer.style.display = 'flex';
+      watcherInput.disabled = true;
+      watcherInput.style.border = 'none';
+      watcherInput.style.backgroundColor = watcherTextBGColorPicker.value;
+      watcherInput.style.color = watcherTextColorPicker.value;
+      message('Watcher Saved!');
+    }
+
+    function edit() {
+      watcherButtonContainer.style.display = 'flex';
+      alterButtonsContainer.style.display = 'none';
+      watcherInput.disabled = false;
+      watcherInput.style.border = '1px solid rgba(0, 0, 0, 0.12)';
+    }
+  }
+
+  function message(m, opts = {type: 'success', time: 2000}) {
+    const bgColor = opts.type === 'success' ? 'rgb(127, 255, 212)' : 'rgb(255,99,71)';
+    MESSAGE.textContent = m;
+    MESSAGE.style.display = 'flex';
+    MESSAGE.style.backgroundColor = bgColor;
+    setTimeout(() => {MESSAGE.style.display = 'none'}, 2000);
+  }
+
+
+})();
