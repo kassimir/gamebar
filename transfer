@@ -5,7 +5,7 @@
 // @description  try to take over the world!
 // @author       You
 // @match        https://kamadan.gwtoolbox.com
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=looper.com
+// @icon         https://www.google.com/s2/favicons?domain=kamadan.gwtoolbox.com
 // @grant        none
 // ==/UserScript==
 
@@ -80,7 +80,9 @@
       HEADER,
       CONTAINER,
       INNERCONTAINER,
-      ADDBUTTON;
+      ADDBUTTON,
+      WATCHERDELETECOUNT = 0,
+      EDITING = false;
 
   go();
 
@@ -125,7 +127,7 @@
       border: '1px solid rgba(0, 0, 0, 0.38)',
       borderRadius: '4px'
     };
-    let ADDBUTTON = create('div', {style: addButtonStyle}, {click: buildWatcher})
+    let ADDBUTTON = create('div', {style: addButtonStyle}, {click: () => buildWatcher()})
     const mouseEnterListener = () => {
       ADDBUTTON.style.boxShadow = '0 0 0 1px rgba(0, 0, 0, 0.38) inset';
     }
@@ -144,14 +146,40 @@
     ADDBUTTON.addEventListener('mouseup', mouseUpListener);
     ADDBUTTON.textContent = '+';
     INNERCONTAINER.appendChild(ADDBUTTON);
-  }
+
     // Get the stored watchers
     WATCHLIST = get();
-   // if (!WATCHLIST) set([]);
-    //else WATCHLIST.forEach(buildWatcher);
+    if (!WATCHLIST) set([]);
+    else if (WATCHLIST.length) WATCHLIST.forEach(w => buildWatcher(w));
 
+    // Mutation Observer to watch the new elements and compare them with the watchers
+    // Select the node that will be observed for mutations
+    const targetNode = document.querySelector('#current-wrapper');
+    // Options for the observer (which mutations to observe)
+    const config = { attributes: true, childList: true, subtree: false };
 
-  function buildWatcher(data) {
+    // Callback function to execute when mutations are observed
+    const callback = (mutationList, observer) => {
+      const watchers = WATCHLIST.map(w => new RegExp(w.watcher, 'i'));
+      for (const mutation of mutationList) {
+        mutation.addedNodes.forEach( node => {
+          watchers.forEach( (watcher, i) => {
+            const re = new RegExp(watcher);
+            if (re.test(node.textContent)) {
+              node.style.backgroundColor = WATCHLIST[i].bgColor;
+              node.style.color = WATCHLIST[i].textColor;
+            }
+          })
+        })
+      }
+    };
+
+    // Create an observer instance linked to the callback function
+    const observer = new MutationObserver(callback);
+    observer.observe(targetNode, config);
+  }
+
+  function buildWatcher(data = null) {
     const watcherContainerStyle = {
       width: '230px',
       height: '55px',
@@ -165,22 +193,34 @@
     INNERCONTAINER.appendChild(watcherContainer);
     const watcherInput = create('input', {style: {margin: '2px 5px', paddingLeft: '3px'}})
     const watcherButtonContainer = create('div', {style: {display: 'flex', flexDirection: 'row', justifyContent: 'space-around'}});
-    const watcherTextColorPicker = create('input', {type: 'color', value: '#000000', style: {width: '30%'}}, {change: v => {watcherInput.style.color = v.target.value}});
     const watcherTextBGColorPicker = create('input', {type: 'color', value: '#FFFFFF', style: {width: '30%'}}, {change: v => {watcherInput.style.backgroundColor = v.target.value}});
-    const saveButton = create('button', {style: {width: '30%', height: '27px'}}, {click: save});
+    const watcherTextColorPicker = create('input', {type: 'color', value: '#000000', style: {width: '30%'}}, {change: v => {watcherInput.style.color = v.target.value}});
+    const saveButton = create('button', {style: {width: '30%', height: '27px'}}, {click: () => {if (data) save(false); else save(true);}});
     saveButton.textContent = 'SAVE';
     const alterButtonsContainer = create('div', {style: {padding: '0 5px', height: '100%', display: 'none', flexDirection: 'row', justifyContent: 'space-around'}})
-    const editButton = create('button', {style: {height: '27px', width: '48%'}}, {click: edit});
+    const editButton = create('button', {style: {height: '27px', width: '48%'}}, {click: () => {if (!WATCHERDELETECOUNT) edit(); else cancelDelete();}});
     editButton.textContent = 'EDIT';
-    const deleteButton = create('button', {style: {height: '27px', width: '48%'}}, {click: edit});
+    const deleteButton = create('button', {style: {height: '27px', width: '48%'}}, {click: () => {if (!WATCHERDELETECOUNT) deleteWatcher(); else deleteForReal();}});
     deleteButton.textContent = 'DELETE';
-    appendChildren(watcherButtonContainer, watcherTextColorPicker, watcherTextBGColorPicker, saveButton);
+    appendChildren(watcherButtonContainer, watcherTextBGColorPicker, watcherTextColorPicker, saveButton);
     appendChildren(alterButtonsContainer, editButton, deleteButton);
     appendChildren(watcherContainer, watcherInput, watcherButtonContainer, alterButtonsContainer);
+    if (data) {
+      watcherInput.value = data.watcher;
+      watcherTextColorPicker.value = data.textColor;
+      watcherTextBGColorPicker.value = data.bgColor;
+      save(false);
+    }
 
-    function save() {
+    function save(addToWatcherList = true) {
       const watcherVal = watcherInput.value;
-      if (!watcherVal) return message('Watcher is empty!', {type: 'error'});
+
+      if (addToWatcherList || EDITING) {
+        // If no watcher, return message
+        if (!watcherVal) return message('Watcher is empty!', {type: 'error'});
+        // If watcher exists, return message
+        if (!EDITING && WATCHLIST.map(w => w.watcher).includes(watcherVal)) return message('Watcher Already Exists!', {type: 'error'});
+      }
       const textColor = watcherTextColorPicker.value
       const bgColor = watcherTextBGColorPicker.value
       const watcher = {
@@ -189,24 +229,55 @@
         bgColor
       }
 
-      if (WATCHLIST.map(w => w.watcher).includes(watcherVal)) return message('Watcher Already Exists!', {type: 'error'});
-
-      WATCHLIST.push(watcher);
-//      set(WATCHLIST);
+      if (addToWatcherList && !EDITING) {
+        WATCHLIST.push(watcher);
+        set(WATCHLIST);
+      } else if (EDITING) {
+        const ind = WATCHLIST.findIndex( w => w.watcher === watcherVal);
+        WATCHLIST.splice(ind, 1, watcher);
+        set(WATCHLIST);
+      }
       watcherButtonContainer.style.display = 'none';
       alterButtonsContainer.style.display = 'flex';
       watcherInput.disabled = true;
       watcherInput.style.border = 'none';
       watcherInput.style.backgroundColor = watcherTextBGColorPicker.value;
       watcherInput.style.color = watcherTextColorPicker.value;
-      message('Watcher Saved!');
+      if (addToWatcherList && !EDITING) message('Watcher Saved!');
+      if (EDITING) {
+        message('Watcher Updated!');
+        EDITING = false;
+      }
     }
 
     function edit() {
+      EDITING = true;
       watcherButtonContainer.style.display = 'flex';
       alterButtonsContainer.style.display = 'none';
       watcherInput.disabled = false;
       watcherInput.style.border = '1px solid rgba(0, 0, 0, 0.12)';
+    }
+
+    function deleteWatcher() {
+      editButton.textContent = 'NO!';
+      deleteButton.textContent = 'YES?';
+      deleteButton.style.backgroundColor = 'tomato';
+      WATCHERDELETECOUNT = 1;
+    }
+
+    function deleteForReal() {
+      const ind = WATCHLIST.findIndex( w => w.watcher === watcherInput.value);
+      WATCHLIST.splice(ind, 1);
+      set(WATCHLIST);
+      INNERCONTAINER.removeChild(watcherContainer);
+      WATCHERDELETECOUNT = 0;
+    }
+
+    function cancelDelete() {
+      editButton.textContent = 'EDIT';
+      deleteButton.textContent = 'DELETE';
+      deleteButton.style.backgroundColor = 'transparent';
+      WATCHERDELETECOUNT = 0;
     }
   }
 
@@ -217,6 +288,5 @@
     MESSAGE.style.backgroundColor = bgColor;
     setTimeout(() => {MESSAGE.style.display = 'none'}, 2000);
   }
-
 
 })();
